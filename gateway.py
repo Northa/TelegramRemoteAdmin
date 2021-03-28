@@ -17,13 +17,14 @@ bot.
 
 import logging
 
-from telegram import Update
+from telegram import Update, ParseMode
 from telegram.ext import Updater, CommandHandler, Filters, CallbackContext
 from api_keys import token, chat_ids
 from subprocess import Popen, PIPE
 import os
 from PIL import ImageGrab
 from runas import runas
+import locale
 # import platform
 
 # Enable logging
@@ -40,13 +41,27 @@ if not os.path.exists(app_folder):
     app_name_exe = f"app_folder\\{app_folder}.exe"
 
 
-def ps_command(command, cmd_app='powershell'):
+def split_message(message, n=4096):
+    # splitting string by the "n" step
+    # because Telegram has a maximum message length of 4096 characters
+    message_list = [message[i:i + n] for i in range(0, len(message), n)]
+    return message_list
+
+
+def get_coding_page():
+    # getting system locale
+    # https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
+    lang, coding_page = locale.getdefaultlocale()
+    return coding_page
+
+
+def ps_command(command, cmd_app=f'powershell'):
     """
     Function to interract with powershell.
     ps_encode sets encoding of the shell input-output to utf-8
     """
     ps_encode = f"[System.Console]::OutputEncoding = "\
-                f"[System.Console]::InputEncoding = "\
+                f"[System.Console]::InputEncoding = " \
                 f"[System.Text.Encoding]::UTF8;"
     command = cmd_app, f"{ps_encode}{command}"
     with open(os.devnull, 'w') as DEVNULL:
@@ -56,10 +71,44 @@ def ps_command(command, cmd_app='powershell'):
                      stdin=DEVNULL,
                      close_fds=False,
                      shell=True)
-    return resp.communicate()[0].decode().split('\n')
+    resp = resp.communicate()[0]
+    try:
+        return split_message(resp.decode('utf-8'))
+    except UnicodeDecodeError:
+        return split_message(resp.decode(get_coding_page()))
+    except Exception as err:
+        return F"Something wrong with encoding: {err}"
+
+
+def terminal(update: Update, context: CallbackContext) -> None:
+    # allows you to execute a command via powershell
+    query = f" ".join(context.args)
+    response = ps_command(query)
+    responses = response
+    for i in responses:
+        update.message.reply_text(i)
+
+
+def list_dir(update: Update, context: CallbackContext) -> None:
+    if len(context.args) < 1:
+        folders = "\n".join(next(os.walk('.'))[1])
+        files = "\n".join(next(os.walk('.'))[2])
+        response = f"<b>{folders}</b>\n{files}"
+        return(update.message.reply_text(response, parse_mode=ParseMode.HTML))
+
+
+def cd_folder(update: Update, context: CallbackContext) -> None:
+    try:
+        os.chdir(context.args[0])
+        response = os.getcwd() + '>'
+        update.message.reply_text(response)
+    except FileNotFoundError as err:
+        response = f'No subfolder matching {err}'
+        update.message.reply_text(response)
 
 
 def get_screen(update: Update, context: CallbackContext) -> None:
+    # take a screenshot
     # could be a problem if screen resolution > 1920px
     screenshot = ImageGrab.grab()
     jpg_location = f"{app_folder}\\scr.jpg"
@@ -82,16 +131,19 @@ def startup(update: Update) -> None:
 def uptime(update: Update, context: CallbackContext) -> None:
     # return time.time() - psutil.boot_time()
     # code below is an example of how to pass multiline commands to ps
-    bootuptime = f"$bootuptime = (Get-CimInstance -ClassName "\
+    bootuptime = f"$bootuptime = (Get-CimInstance -ClassName " \
                  f"Win32_OperatingSystem).LastBootUpTime;"
     curr_date = "$CurrDate = Get-Date;"
     detailed_uptime = "$uptime = $CurrDate - $bootuptime;"
     # uptime = "$uptime" # return full response
     # list of vars ['0\r', '1\r', '29\r', '']
     uptime = "$($uptime.days),$($uptime.Hours),$($uptime.Minutes)"
+
     response = ps_command(f"{bootuptime}{curr_date}{detailed_uptime}{uptime}")
-    print(response)
-    update.message.reply_text(response)
+    response = response[0].split()
+    update.message.reply_text(f"{response[0]} days "
+                              f"{response[1]} hours "
+                              f"{response[2]} minutes ")
 
 
 def pwd(update: Update, context: CallbackContext) -> None:
@@ -142,6 +194,9 @@ def main() -> None:
         "uptime", uptime, Filters.chat(chat_id=chat_ids)))
     dispatcher.add_handler(CommandHandler(
         "get_screen", get_screen, Filters.chat(chat_id=chat_ids)))
+    dispatcher.add_handler(CommandHandler("terminal", terminal, Filters.chat(chat_id=chat_ids), pass_args=True))
+    dispatcher.add_handler(CommandHandler("ls", list_dir, Filters.chat(chat_id=chat_ids), pass_args=True))
+    dispatcher.add_handler(CommandHandler("cd", cd_folder, Filters.chat(chat_id=chat_ids), pass_args=True))
 
     # on noncommand i.e message - echo the message on Telegram
     # dispatcher.add_handler(MessageHandler(
@@ -152,3 +207,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     runas(main)
+    # main()
