@@ -1,0 +1,8 @@
+python-telegram-bot
+requests
+image
+winshell
+pypiwin32
+pyinstaller
+psutil
+pillow

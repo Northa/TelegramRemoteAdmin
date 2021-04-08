@@ -90,6 +90,8 @@ def terminal(update: Update, context: CallbackContext) -> None:
 
 
 def list_dir(update: Update, context: CallbackContext) -> None:
+    # equivalent of ls -al
+    # setting a bold font style for folders :)
     if len(context.args) < 1:
         folders = "\n".join(next(os.walk('.'))[1])
         files = "\n".join(next(os.walk('.'))[2])
@@ -98,6 +100,7 @@ def list_dir(update: Update, context: CallbackContext) -> None:
 
 
 def cd_folder(update: Update, context: CallbackContext) -> None:
+    # The "cd" command, used to change the current working directory
     try:
         os.chdir(context.args[0])
         response = os.getcwd() + '>'
@@ -147,6 +150,7 @@ def uptime(update: Update, context: CallbackContext) -> None:
 
 
 def pwd(update: Update, context: CallbackContext) -> None:
+    # printing the current working directory
     response = os.getcwd()
     update.message.reply_text(response)
 
@@ -158,6 +162,7 @@ def get_execution_policy(update: Update, context: CallbackContext) -> None:
 
 
 def users(update: Update, context: CallbackContext) -> None:
+    # currently logged in users
     query = f"query user /server:$SERVER"
     response = ps_command(query)
     # means there are only one active user
